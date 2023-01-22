@@ -49,7 +49,7 @@ class ExchangePotential(dobject):
         # self._V[l] = V^[1,l+1]
         self._V = self._evaluate_V_forward()
 
-        # self._V_backward[l] = V^[l+1, N]
+        # TODO: remove
         self._V_backward = self._evaluate_V_backward()
 
     def _init_bead_position_array(self, boson_identities, qall):
@@ -79,93 +79,59 @@ class ExchangePotential(dobject):
     def evaluate_dVB_from_VB(self):
         F = np.zeros((self._P, self._N, 3), float)
 
+        dexpVall = -1 / (self._betaP * np.exp(- self._betaP * self.V_all()))
+
+        dexpVm = np.empty(self._N)
+        dexpVm[-1] = dexpVall
+        for m in range(self._N - 2, -1, -1):
+            val = 0.0
+            for v in range(m+1, self._N):
+                val += dexpVm[v] * 1/(v+1) * np.exp(- self._betaP * self._E_from_to[m+1, v]) # recursion
+            dexpVm[m] = val
+
+        dexpEuv = np.zeros((self._N, self._N))
+        for u in range(self._N):
+            for v in range(u, self._N):
+                dexpEuv[u, v] = dexpVm[v] * 1/(v+1) * np.exp(- self._betaP * self._V[u]) # exp(-beta V[1,u-1]
+
+        dEuv = np.zeros((self._N, self._N))
+        for u in range(self._N):
+            for v in range(u, self._N):
+                dEuv[u, v] = dexpEuv[u, v] * (-self._betaP) * np.exp(- self._betaP * self._E_from_to[u, v]) \
+                             + (0 if u is 0 else dEuv[u-1, v]) # recursion
+
+        dEint = np.zeros(self._N)
+        for l in range(self._N):
+            dEint[l] = np.sum(dEuv[l,l:]) # should always be 1.0
+
         # force on intermediate beads
-        #
-        # for j in range(1, self._P - 1):
-        #   for l in range(self._N):
-        #         F[j, l, :] = self._spring_force_prefix() * (-self._bead_diff_intra[j][l] +
-        #                                                     self._bead_diff_intra[j - 1][l])
-        F[1:-1, :, :] = self._spring_force_prefix() * (-self._bead_diff_intra[1:, :] +
-                                                       np.roll(self._bead_diff_intra, axis=0, shift=1)[1:, :])
+        for l in range(self._N):
+            F[1:-1, l, :] = dEint[l] * self._spring_force_prefix() * (-self._bead_diff_intra[1:, l] +
+                                                       np.roll(self._bead_diff_intra, axis=0, shift=1)[1:, l])
 
         # force on endpoint beads
-        #
-        connection_probs = np.zeros((self._N, self._N), float)
-        # close cycle probabilities:
-        # for u in range(0, self._N):
-        #     for l in range(u, self._N):
-        #         connection_probs[l][u] = 1 / (l + 1) * \
-        #                np.exp(- self._betaP *
-        #                        (self.V_forward(u - 1) + self.Ek_N(l + 1 - u, l + 1) + self.V_backward(l + 1)
-        #                         - self.V_all()))
-        tril_indices = np.tril_indices(self._N, k=0)
-        connection_probs[tril_indices] = (
-                            # np.asarray([1 / (l + 1) for l in range(self._N)])[:, np.newaxis] *
-                            np.reciprocal(np.arange(1.0, self._N + 1))[:, np.newaxis] *
-                            np.exp(- self._betaP * (
-                                # np.asarray([self.V_forward(u - 1) for u in range(self._N)])[np.newaxis, :]
-                                self._V[np.newaxis, :-1]
-                                # + np.asarray([(self.Ek_N(l + 1 - u, l + 1) if l >= u else 0) for l in range(self._N)
-                                #                   for u in range(self._N)]).reshape((self._N, self._N))
-                                + self._E_from_to.T
-                                # + np.asarray([self.V_backward(l + 1) for l in range(self._N)])[:, np.newaxis]
-                                + self._V_backward[1:, np.newaxis]
-                                - self.V_all()
-                            )))[tril_indices]
+        for l in range(self._N):
+            acc = np.zeros(3)
+            acc += dEuv[l, l] * (- self._bead_diff_inter_first_last_bead[l, l])
+            for v in range(l + 1, self._N):
+                acc += dEuv[l, v] * (- self._bead_diff_inter_first_last_bead[l + 1, l])
+            for u in range(l):
+                acc += dEuv[u, l] * (self._bead_diff_inter_first_last_bead[u + 1, l] +
+                                     (- self._bead_diff_inter_first_last_bead[u, l]))
+            acc += dEint[l] * self._bead_diff_intra[-1, l]
+            F[-1, l, :] = self._spring_force_prefix() * acc
 
-        # direct link probabilities:
-        # for l in range(self._N - 1):
-        #     connection_probs[l][l+1] = 1 - (np.exp(- self._betaP * (self.V_forward(l) + self.V_backward(l + 1) -
-        #                                         self.V_all())))
-        superdiagonal_indices = kth_diag_indices(connection_probs, k=1)
-        connection_probs[superdiagonal_indices] = 1 - (np.exp(- self._betaP *
-                                                        (self._V[1:-1] + self._V_backward[1:-1] - self.V_all())))
-
-        # on the last bead:
-        #
-        # for l in range(self._N):
-        #     force_from_neighbor = np.empty((self._N, 3))
-        #     for next_l in range(max(l + 1, self._N)):
-        #         force_from_neighbor[next_l, :] = self._spring_force_prefix() * \
-        #                         (-self._bead_diff_inter_first_last_bead[next_l, l] + self._bead_diff_intra[-1, l])
-        #     F[-1, l, :] = sum(connection_probs[l][next_l] * force_from_neighbor[next_l]
-        #                       for next_l in range(self._N))
-        #
-        # First vectorization:
-        # for l in range(self._N):
-        #     force_from_neighbors = np.empty((self._N, 3))
-        #     force_from_neighbors[:, :] = self._spring_force_prefix() * \
-        #                         (-self._bead_diff_inter_first_last_bead[:, l] + self._bead_diff_intra[-1, l])
-        #     F[-1, l, :] = np.dot(connection_probs[l][:], force_from_neighbors)
-        force_from_neighbors = self._spring_force_prefix() * \
-                               (-np.transpose(self._bead_diff_inter_first_last_bead,
-                                              axes=(1,0,2))
-                                + self._bead_diff_intra[-1, :, np.newaxis])
-        # F[-1, l, k] = sum_{j}{force_from_neighbors[l][j][k] * connection_probs[l,j]}
-        F[-1, :, :] = np.einsum('ljk,lj->lk', force_from_neighbors, connection_probs)
-
-        # on the first bead:
-        #
-        # for l in range(self._N):
-        #     force_from_neighbor = np.empty((self._N, 3))
-        #     for prev_l in range(l - 1, self._N):
-        #         force_from_neighbor[prev_l, :] = self._spring_force_prefix() * \
-        #                            (-self._bead_diff_intra[0, l] + self._bead_diff_inter_first_last_bead[l, prev_l])
-        #     F[0, l, :] = sum(connection_probs[prev_l][l] * force_from_neighbor[prev_l]
-        #                      for prev_l in range(self._N))
-        #
-        # First vectorization:
-        #
-        # for l in range(self._N):
-        #     force_from_neighbors = np.empty((self._N, 3))
-        #     force_from_neighbors[:, :] = self._spring_force_prefix() * \
-        #                              (-self._bead_diff_intra[0, l] + self._bead_diff_inter_first_last_bead[l, :])
-        #     F[0, l, :] = np.dot(connection_probs[:, l], force_from_neighbors)
-        #
-        force_from_neighbors = self._spring_force_prefix() * \
-                                    (self._bead_diff_inter_first_last_bead - self._bead_diff_intra[0, :, np.newaxis])
-        # F[0, l, k] = sum_{j}{force_from_neighbors[l][j][k] * connection_probs[j,l]}
-        F[0, :, :] = np.einsum('ljk,jl->lk', force_from_neighbors, connection_probs)
+        for l in range(self._N):
+            acc = np.zeros(3)
+            acc += dEuv[l, l] * self._bead_diff_inter_first_last_bead[l, l]
+            for v in range(l + 1, self._N):
+                acc += dEuv[l, v] * self._bead_diff_inter_first_last_bead[l, v]
+            if l > 0:
+                for v in range(l, self._N):
+                    acc += dEuv[l - 1, v] * (self._bead_diff_inter_first_last_bead[l, l - 1] +
+                                         (- self._bead_diff_inter_first_last_bead[l, v]))
+            acc += dEint[l] * (- self._bead_diff_intra[0, l])
+            F[0, l, :] = self._spring_force_prefix() * acc
 
         return F
     
