@@ -84,32 +84,49 @@ class ExchangePotential(dobject):
         dexpVm = np.empty(self._N)
         dexpVm[-1] = dexpVall
         for m in range(self._N - 2, -1, -1):
-            val = 0.0
-            for v in range(m+1, self._N):
-                val += dexpVm[v] * 1/(v+1) * np.exp(- self._betaP * self._E_from_to[m+1, v]) # recursion
-            dexpVm[m] = val
+            # val = 0.0
+            # for v in range(m+1, self._N):
+            #     val += dexpVm[v] * 1/(v+1) * np.exp(- self._betaP * self._E_from_to[m+1, v])
+            dexpVm[m] = np.sum(
+                dexpVm[m+1:] * # recursion
+                np.reciprocal(np.arange(m + 2, self._N + 1, dtype=float)) *
+                np.exp(-self._betaP * self._E_from_to[m+1, (m+1):])
+            )
 
         dexpEuv = np.zeros((self._N, self._N))
-        for u in range(self._N):
-            for v in range(u, self._N):
-                dexpEuv[u, v] = dexpVm[v] * 1/(v+1) * np.exp(- self._betaP * self._V[u]) # exp(-beta V[1,u-1]
+        # for u in range(self._N):
+        #     for v in range(u, self._N):
+        #         dexpEuv[u, v] = dexpVm[v] * 1/(v+1) * np.exp(- self._betaP * self._V[u]) # exp(-beta V[1,u-1])
+        dexpEuv[:, :] = (dexpVm[np.newaxis, :] *
+                         np.reciprocal(np.arange(1.0, self._N + 1, dtype=float))[np.newaxis, :] *
+                         np.exp(- self._betaP * self._V[:-1, np.newaxis])
+                         )
 
-        dEuv = np.zeros((self._N, self._N))
+        dEuv = np.zeros((self._N, self._N), order='F')
+        # for u in range(self._N):
+        #     for v in range(u, self._N):
+        #         dEuv[u, v] = dexpEuv[u, v] * (-self._betaP) * np.exp(- self._betaP * self._E_from_to[u, v]) \
+        #                      + (0 if u == 0 else dEuv[u-1, v]) # recursion
         for u in range(self._N):
-            for v in range(u, self._N):
-                dEuv[u, v] = dexpEuv[u, v] * (-self._betaP) * np.exp(- self._betaP * self._E_from_to[u, v]) \
-                             + (0 if u is 0 else dEuv[u-1, v]) # recursion
+            dEuv[u, u:] = (
+                dexpEuv[u, u:] * (-self._betaP) * np.exp(- self._betaP * self._E_from_to[u, u:])
+                + (0 if u == 0 else dEuv[u - 1, u:])  # recursion
+            )
 
-        dEint = np.zeros(self._N)
-        for l in range(self._N):
-            dEint[l] = np.sum(dEuv[l,l:]) # should always be 1.0
+        # dEint = np.empty(self._N)
+        # for l in range(self._N):
+        #     dEint[l] = np.sum(dEuv[l,l:]) # should always be 1.0
+        dEint = np.sum(dEuv, axis=1) # should be [1.0, 1.0, ...]
 
         # force on intermediate beads
-        for l in range(self._N):
-            F[1:-1, l, :] = dEint[l] * self._spring_force_prefix() * (-self._bead_diff_intra[1:, l] +
-                                                       np.roll(self._bead_diff_intra, axis=0, shift=1)[1:, l])
+        # for l in range(self._N):
+        #     F[1:-1, l, :] = dEint[l] * self._spring_force_prefix() * (-self._bead_diff_intra[1:, l] +
+        #                                                np.roll(self._bead_diff_intra, axis=0, shift=1)[1:, l])
+        F[1:-1, :, :] = dEint[:, np.newaxis] * self._spring_force_prefix() * (-self._bead_diff_intra[1:, :] +
+                                            np.roll(self._bead_diff_intra, axis=0, shift=1)[1:, :])
 
         # force on endpoint beads
+        #
         for l in range(self._N):
             acc = np.zeros(3)
             acc += dEuv[l, l] * (- self._bead_diff_inter_first_last_bead[l, l])
