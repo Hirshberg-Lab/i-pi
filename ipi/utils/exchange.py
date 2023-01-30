@@ -51,9 +51,6 @@ class ExchangePotential(dobject):
         # self._V[l] = V^[1,l+1]
         self._V = self._evaluate_V_forward()
 
-        # TODO: remove
-        self._V_backward = self._evaluate_V_backward()
-
     def _init_bead_position_array(self, boson_identities, qall):
         q = np.empty((self._P, self._N, 3), float)
         # Stores coordinates just for bosons in separate arrays with new indices 1,...,Nbosons
@@ -245,25 +242,3 @@ class ExchangePotential(dobject):
             V[m] = Elong - np.log(sig / m) / self._betaP
 
         return V
-
-    def _evaluate_V_backward(self):
-        RV = np.zeros(self._N + 1, float)
-
-        for l in range(self._N - 1, 0, -1):
-            # For numerical stability
-            Elong = min(self._E_from_to[1, l] + RV[l + 1], self._E_from_to[l, self._N - 1])
-
-            # sig = 0.0
-            # for p in range(l, self._N):
-            #     sig += 1 / (p + 1) * np.exp(- self._betaP * (self._Ek_N[l, p] + RV[p + 1]
-            #                                                 - Elong))
-            sig = np.sum(np.reciprocal(np.arange(l + 1.0, self._N + 1)) *
-                         np.exp(- self._betaP * (self._E_from_to[l, l:] + RV[l + 1:]
-                                                 - Elong)))
-            assert sig != 0.0
-            RV[l] = Elong - np.log(sig) / self._betaP
-
-        # V^[1,N]
-        RV[0] = self._V[-1]
-
-        return RV
