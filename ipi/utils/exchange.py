@@ -24,6 +24,8 @@ def kth_diag_indices(a, k):
     else:
         return rows, cols
 
+def tril_first_axes(arr, k):
+    return np.transpose(np.tril(np.transpose(arr), k=k))
 
 class ExchangePotential(dobject):
     def __init__(self, boson_identities, all_particle_bead_positions,
@@ -127,16 +129,33 @@ class ExchangePotential(dobject):
 
         # force on endpoint beads
         #
-        for l in range(self._N):
-            acc = np.zeros(3)
-            acc += dEuv[l, l] * (- self._bead_diff_inter_first_last_bead[l, l])
-            for v in range(l + 1, self._N):
-                acc += dEuv[l, v] * (- self._bead_diff_inter_first_last_bead[l + 1, l])
-            for u in range(l):
-                acc += dEuv[u, l] * (self._bead_diff_inter_first_last_bead[u + 1, l] +
-                                     (- self._bead_diff_inter_first_last_bead[u, l]))
-            acc += dEint[l] * self._bead_diff_intra[-1, l]
-            F[-1, l, :] = self._spring_force_prefix() * acc
+        # for l in range(self._N):
+        #     acc = np.zeros(3)
+        #     acc += dEuv[l, l] * (- self._bead_diff_inter_first_last_bead[l, l])
+        #     for v in range(l + 1, self._N):
+        #         acc += dEuv[l, v] * (- self._bead_diff_inter_first_last_bead[l + 1, l])
+        #     for u in range(l):
+        #         acc += dEuv[u, l] * (self._bead_diff_inter_first_last_bead[u + 1, l] +
+        #                              (- self._bead_diff_inter_first_last_bead[u, l]))
+        #     acc += dEint[l] * self._bead_diff_intra[-1, l]
+        #     F[-1, l, :] = self._spring_force_prefix() * acc
+        F[-1, :, :] += self._spring_force_prefix() * \
+                       (np.diagonal(dEuv) * (- np.diagonal(self._bead_diff_inter_first_last_bead, axis1=0, axis2=1))).T
+        F[-1, :-1, :] += self._spring_force_prefix() * \
+                         (np.sum(tril_first_axes(
+                             dEuv[:-1, :, np.newaxis] *
+                             (- np.diagonal(np.transpose(self._bead_diff_inter_first_last_bead, axes=(1,0,2)),
+                                            offset=1, axis1=0, axis2=1).T)[:, np.newaxis, :],
+                             k=-1),
+                             axis=1))
+        F[-1, :, :] += self._spring_force_prefix() * \
+                       np.sum(tril_first_axes(dEuv[:, :, np.newaxis] *
+                                              (- self._bead_diff_inter_first_last_bead +
+                                                np.roll(self._bead_diff_inter_first_last_bead, axis=0, shift=-1)),
+                                              k=-1),
+                              axis=0)
+        F[-1, :, :] += self._spring_force_prefix() * \
+                       dEint[:, np.newaxis] * self._bead_diff_intra[-1]
 
         for l in range(self._N):
             acc = np.zeros(3)
