@@ -145,8 +145,8 @@ class ExchangePotential(dobject):
         F[-1, :-1, :] += self._spring_force_prefix() * \
                          (np.sum(tril_first_axes(
                              dEuv[:-1, :, np.newaxis] *
-                             (- np.diagonal(np.transpose(self._bead_diff_inter_first_last_bead, axes=(1,0,2)),
-                                            offset=1, axis1=0, axis2=1).T)[:, np.newaxis, :],
+                             (- np.diagonal(self._bead_diff_inter_first_last_bead,
+                                            offset=1, axis1=1, axis2=0).T)[:, np.newaxis, :],
                              k=-1),
                              axis=1))
         F[-1, :, :] += self._spring_force_prefix() * \
