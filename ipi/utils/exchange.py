@@ -115,7 +115,8 @@ class ExchangePotential(dobject):
         # dEint = np.empty(self._N)
         # for l in range(self._N):
         #     dEint[l] = np.sum(dEuv[l,l:]) # should always be 1.0
-        dEint = np.sum(dEuv, axis=1) # should be [1.0, 1.0, ...]
+        # dEint = np.sum(dEuv, axis=1) # should be [1.0, 1.0, ...]
+        dEint = np.ones(self._N)
 
         # force on intermediate beads
         # for l in range(self._N):
