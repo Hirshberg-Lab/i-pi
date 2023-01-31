@@ -14,10 +14,16 @@ import tempfile
 from scipy import stats
 import math
 import os
+import matplotlib.pyplot as plt
+
+# Baseline file:
+# BOSON_SCALING_CSV_OUTPUT_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), "boson_scaling_baseline.csv")
 
 BOSON_SCALING_CSV_OUTPUT_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), "boson_scaling.csv")
+# BOSON_SCALING_CSV_OUTPUT_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), "boson_scaling_8192_2.csv")
+# BOSON_SCALING_CSV_OUTPUT_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), "boson_scaling_8192_raw.csv")
 
-SINGLE_BENCH_TIMEOUT_SECONDS = 1800
+SINGLE_BENCH_TIMEOUT_SECONDS = 604800
 
 def ipi_config(boson_positions, boson_masses, boson_labels, bosons_list):
     INPUT_XML_TEMPLATE = """<!--REGTEST
@@ -227,43 +233,28 @@ def random_position():
 def random_boson_positions(nbosons):
     return [[random_position(), random_position(), random_position()] for _ in range(nbosons)]
 
-def bench_bosons(nbosons):
-    NUM_REPETITIONS = 5
-
-    boson_positions = random_boson_positions(nbosons)
-
-    time_measurements = [bench_bosons_single(nbosons, boson_positions) for _ in range(0, NUM_REPETITIONS)]
-    logger.info("standard deviation. nbosons: %d; time: %f" % (nbosons, statistics.stdev(time_measurements)))
-    return statistics.mean(time_measurements)
-
 def boson_scalability(boson_numbers):
+    NUM_REPETITIONS = 3
+
     with open(BOSON_SCALING_CSV_OUTPUT_PATH, "wt") as csv_log:
         w = csv.DictWriter(csv_log, ["nbosons", "time"])
         w.writeheader()
         csv_log.flush()
 
         for nbosons in boson_numbers:
-            time = bench_bosons(nbosons)
-            w.writerow({"nbosons": nbosons, "time": time})
-            csv_log.flush()
+            boson_positions = random_boson_positions(nbosons)
 
-def analyze_scalability_csv():
-    data = np.genfromtxt(BOSON_SCALING_CSV_OUTPUT_PATH, delimiter=",", skip_header=True)
-    data_log = np.log(data)
-    slope, intercept, r, p, std_err = stats.linregress(data_log)
-    print(slope, intercept, r, p)
+            for _ in range(NUM_REPETITIONS):
+                measured_time = bench_bosons_single(nbosons, boson_positions)
+                w.writerow({"nbosons": nbosons, "time": measured_time})
+                csv_log.flush()
 
 def main():
     set_logger()
 
-    MIN_N = 1
-    MAX_N = 2
-    INCREMENT = 4
+    boson_numbers = [16, 32, 64, 128, 256, 512, 1024]
 
-    # analyze_scalability_csv()
-    # assert False
-
-    boson_numbers = list(range(MIN_N, MAX_N + 1, INCREMENT))
+    random.seed(1885) # TODO: hardcoded
 
     boson_scalability(boson_numbers)
 
