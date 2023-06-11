@@ -427,6 +427,14 @@ class Properties(dobject):
                       to specify which species to find the kinetic energy of. If not specified, all atoms are used.""",
                 "func": self.get_kincv,
             },
+            "kinetic_gcv": {
+                "dimension": "energy",
+                "help": "The global centroid-virial quantum kinetic energy of the physical system.",
+                "longhelp": """The global centroid-virial quantum kinetic energy of the physical system.
+                  Takes an argument 'atom', which can be either an atom label or index (zero based)
+                  to specify which species to find the kinetic energy of. If not specified, all atoms are used.""",
+                "func": self.get_kingcv,
+            },
             "kinetic_td": {
                 "dimension": "energy",
                 "help": "The primitive quantum kinetic energy of the physical system.",
@@ -1103,6 +1111,67 @@ class Properties(dobject):
         # ~ kcv += 1.5*Constants.kb*self.ensemble.temp
         # ~ acv += kcv
         # ~ ncount += 1
+
+        if ncount == 0:
+            warning(
+                "Couldn't find an atom which matched the argument of kinetic energy, setting to zero.",
+                verbosity.medium,
+            )
+
+        return acv
+
+    def get_kingcv(self, atom=""):
+        """Calculates the global quantum centroid virial kinetic energy estimator.
+
+        Args:
+           atom: If given, specifies the atom to give the kinetic energy
+              for. If not, the system kinetic energy is given.
+        """
+
+        try:
+            # iatom gives the index of the atom to be studied
+            iatom = int(atom)
+            latom = ""
+            if iatom >= self.beads.natoms:
+                raise IndexError(
+                    "Cannot output kinetic energy as atom index %d is larger than the number of atoms"
+                    % iatom
+                )
+        except ValueError:
+            # here 'atom' is a label rather than an index which is stored in latom
+            iatom = -1
+            latom = atom
+
+        f = dstrip(self.forces.f)
+        # subtracts centroid
+
+        # q has the form [nbeads, 3 * natoms]
+        q = dstrip(self.beads.q).copy()
+
+        # self.beads.qc has dimensions of 3*N
+
+        qc = dstrip(self.beads.qc)
+
+        # Calculate global centroid from the N centroids
+        # TODO: Consider replacing mean with something less error-prone (i.e., explicit division by natoms)
+        # TODO: np.tile is used only to subtract the same vector from all the atomic q[bead_idx] coordinates.
+        #       think of a better implementation.
+        qglob = np.tile(np.mean(qc.reshape(-1, 3), axis=0), self.beads.natoms)
+
+        for b in range(self.beads.nbeads):
+            q[b] -= qglob
+
+        # zeroes components that are not requested
+        ncount = 0
+        for i in range(self.beads.natoms):
+            if atom != "" and iatom != i and latom != self.beads.names[i]:
+                q[:, 3 * i : 3 * i + 3] = 0.0
+            else:
+                ncount += 1
+
+        acv = np.dot(q.flatten(), f.flatten())
+        acv *= -0.5 / self.beads.nbeads
+        acv += 1.5 * Constants.kb * self.ensemble.temp
 
         if ncount == 0:
             warning(
