@@ -430,9 +430,7 @@ class Properties(dobject):
             "kinetic_gcv": {
                 "dimension": "energy",
                 "help": "The global centroid-virial quantum kinetic energy of the physical system.",
-                "longhelp": """The global centroid-virial quantum kinetic energy of the physical system.
-                  Takes an argument 'atom', which can be either an atom label or index (zero based)
-                  to specify which species to find the kinetic energy of. If not specified, all atoms are used.""",
+                "longhelp": """The global centroid-virial quantum kinetic energy of the physical system.""",
                 "func": self.get_kingcv,
             },
             "kinetic_td": {
@@ -563,6 +561,15 @@ class Properties(dobject):
                     lambda atom="", bead="-1": self.get_atom_vec(
                         self.beads.p, atom=atom, bead=bead
                     )
+                ),
+            },
+            "global_centroid": {
+                "dimension": "length",
+                "help": "The coordinates (x,y,z) of the global centroid of the physical system.",
+                "longhelp": "The coordinates (x,y,z) of the global centroid of the physical system.",
+                "size": 3,
+                "func": (
+                    lambda _: np.mean(dstrip(self.beads.qc).reshape(-1, 3), axis=0)
                 ),
             },
             "atom_f": {
@@ -1120,36 +1127,15 @@ class Properties(dobject):
 
         return acv
 
-    def get_kingcv(self, atom=""):
-        """Calculates the global quantum centroid virial kinetic energy estimator.
-
-        Args:
-           atom: If given, specifies the atom to give the kinetic energy
-              for. If not, the system kinetic energy is given.
-        """
-
-        try:
-            # iatom gives the index of the atom to be studied
-            iatom = int(atom)
-            latom = ""
-            if iatom >= self.beads.natoms:
-                raise IndexError(
-                    "Cannot output kinetic energy as atom index %d is larger than the number of atoms"
-                    % iatom
-                )
-        except ValueError:
-            # here 'atom' is a label rather than an index which is stored in latom
-            iatom = -1
-            latom = atom
+    def get_kingcv(self):
+        """Calculates the global quantum centroid virial kinetic energy estimator."""
 
         f = dstrip(self.forces.f)
-        # subtracts centroid
 
         # q has the form [nbeads, 3 * natoms]
         q = dstrip(self.beads.q).copy()
 
         # self.beads.qc has dimensions of 3*N
-
         qc = dstrip(self.beads.qc)
 
         # Calculate global centroid from the N centroids
@@ -1161,23 +1147,13 @@ class Properties(dobject):
         for b in range(self.beads.nbeads):
             q[b] -= qglob
 
-        # zeroes components that are not requested
-        ncount = 0
-        for i in range(self.beads.natoms):
-            if atom != "" and iatom != i and latom != self.beads.names[i]:
-                q[:, 3 * i : 3 * i + 3] = 0.0
-            else:
-                ncount += 1
-
         acv = np.dot(q.flatten(), f.flatten())
-        acv *= -0.5 / self.beads.nbeads
-        acv += 1.5 * Constants.kb * self.ensemble.temp
 
-        if ncount == 0:
-            warning(
-                "Couldn't find an atom which matched the argument of kinetic energy, setting to zero.",
-                verbosity.medium,
-            )
+        # Minus because -F=dV/dr
+        acv *= -0.5 / self.beads.nbeads
+
+        # The constant is d/(2*beta) where d is the dimension (here d=3)
+        acv += 1.5 * Constants.kb * self.ensemble.temp
 
         return acv
 
