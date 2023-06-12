@@ -27,6 +27,7 @@
 ! the ideal gas (i.e. no interaction at all)
 
       PROGRAM DRIVER
+         USE Aziz
          USE LJ
          USE LJPolymer
          USE SG
@@ -163,11 +164,13 @@
                   vstyle = 27
                ELSEIF (trim(cmdbuffer) == "gas") THEN
                   vstyle = 0  ! ideal gas
+               ELSEIF (trim(cmdbuffer) == "aziz") THEN
+                  vstyle = 79
                ELSEIF (trim(cmdbuffer) == "dummy") THEN
                   vstyle = 99 ! returns non-zero but otherwise meaningless values
                ELSE
                   WRITE(*,*) " Unrecognized potential type ", trim(cmdbuffer)
-                  WRITE(*,*) " Use -m [dummy|gas|lj|sg|harm|harm3d|morse|morsedia|zundel|qtip4pf|pswater|lepsm1|lepsm2|qtip4pf-efield|eckart|ch4hcbe|ljpolymer|MB|doublewell|doublewell_1D|morsedia|qtip4pf-sr] "
+                  WRITE(*,*) " Use -m [dummy|gas|aziz|lj|sg|harm|harm3d|morse|morsedia|zundel|qtip4pf|pswater|lepsm1|lepsm2|qtip4pf-efield|eckart|ch4hcbe|ljpolymer|MB|doublewell|doublewell_1D|morsedia|qtip4pf-sr] "
                   STOP "ENDED"
                ENDIF
             ELSEIF (ccmd == 4) THEN
@@ -322,6 +325,15 @@
          sigma = vpars(1)
          eps = vpars(2)
          rc = vpars(3)
+         rn = rc*1.2
+         isinit = .true.
+      ELSEIF (vstyle == 79) THEN
+         IF (par_count /= 1) THEN
+            WRITE(*,*) "Error: parameters not initialized correctly."
+            WRITE(*,*) "For Aziz potential use -o cutoff "
+            STOP "ENDED" ! Note that if initialization from the wrapper is implemented this exit should be removed.
+         ENDIF
+         rc = vpars(1)
          rn = rc*1.2
          isinit = .true.
       ELSEIF (vstyle == 2) THEN
@@ -689,6 +701,8 @@
                   CALL SG_getall(rc, nat, atoms, cell_h, cell_ih, index_list, n_list, pot, forces, virial)
                ELSEIF (vstyle == 22) THEN ! ljpolymer potential.
                   CALL ljpolymer_getall(n_monomer,rc,sigma,eps,stiffness,nat,atoms,cell_h,cell_ih,index_list,n_list,pot,forces,virial)
+               ELSEIF (vstyle == 79) THEN ! Aziz potential.
+                  CALL aziz_getall(rc, nat, atoms, cell_h, cell_ih, index_list, n_list, pot, forces, virial)
                ENDIF
                IF (verbose > 0) WRITE(*,*) " Calculated energy is ", pot
             ENDIF
@@ -778,6 +792,7 @@
          WRITE(*,*) ""
          WRITE(*,*) " For LJ potential use -o sigma,epsilon,cutoff "
          WRITE(*,*) " For SG potential use -o cutoff "
+         WRITE(*,*) " For Aziz potential use -o cutoff "
          WRITE(*,*) " For 1D/3D harmonic oscillator use -o k "
          WRITE(*,*) " For 1D morse oscillators use -o r0,D,a"
          WRITE(*,*) " For qtip4pf-efield use -o Ex,Ey,Ez with Ei in V/nm"
