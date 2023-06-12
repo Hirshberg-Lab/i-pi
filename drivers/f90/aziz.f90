@@ -89,7 +89,7 @@
             f_sum1 = (C6 * (ratio ** 6) + C8 * (ratio ** 8) + C10 * (ratio ** 10)) * df
             f_sum2 = (6.0D0 * C6 * (ratio ** 7) + 8.0D0 * C8 * (ratio ** 9) + 10.0D0 * C10 * (ratio ** 11)) * (f / rm)
             
-            force = eps * (exp_term + sum1 - sum2)
+            force = eps * (f_exp_term + f_sum1 - f_sum2)
 
          END SUBROUTINE
 
@@ -138,27 +138,32 @@
             DOUBLE PRECISION, INTENT(OUT) :: pot_lr
             DOUBLE PRECISION, INTENT(OUT) :: vir_lr
 
-            DOUBLE PRECISION sbyr, s3byr3, s6byr6, prefactor
+            DOUBLE PRECISION maxsep, rmol, rm3, t1, t2, t3, t4
 
-            sbyr = sigma/rc
-            s3byr3 = sbyr*sbyr*sbyr
-            s6byr6 = s3byr3*s3byr3
-            prefactor = four_tau_by_3*natoms*natoms*eps/volume
-            prefactor = prefactor*s3byr3*sigma*sigma*sigma
+            ! Del Maestro's implementation
+            ! Check whether maxsep is indeed chosen correctly
+            ! Also check where the cutoff enters the picture
+            maxsep = volume**(1d0/3d0)
 
-            pot_lr = prefactor*(s6byr6/3-1)
-            vir_lr = prefactor*(s6byr6-1) + pot_lr
+            rmol = rm / maxsep
+            rm3 = rm * rm * rmol
+            t1 = A * EXP(-alpha * maxsep / (2.0D0 * rm)) * rm * (8.0D0 * rm * rm + 4.0D0 * maxsep * rm * alpha + maxsep * maxsep * alpha * alpha) / (4.0D0 * alpha * alpha * alpha)
+            t2 = 8.0D0 * C6 * rmoL**3.0D0 / 3.0D0
+            t3 = 32.0D0 * C8 * rmoL**5.0D0 / 5.0D0
+            t4 = 128.0D0 * C10 * rmoL**7.0D0 / 7.0D0
+
+            pot_lr = 2.0D0 * ACOS(-1.0D0) * eps * (t1 - rm3 * (t2 + t3 + t4))
+            
+            vir_lr = 0.0D0
 
          END SUBROUTINE
 
-         SUBROUTINE LJ_getall(rc, sigma, eps, natoms, atoms, cell_h, cell_ih, index_list, n_list, pot, forces, virial)
-            ! Calculates the LJ potential energy and virial and the forces 
+         SUBROUTINE aziz_getall(rc, natoms, atoms, cell_h, cell_ih, index_list, n_list, pot, forces, virial)
+            ! Calculates the Aziz potential energy and virial and the forces 
             ! acting on all the atoms.
             !
             ! Args:
             !    rc: The cut-off radius.
-            !    sigma: The LJ distance parameter.
-            !    eps: The LJ energy parameter.
             !    natoms: The number of atoms in the system.
             !    atoms: A vector holding all the atom positions.
             !    cell_h: The simulation box cell vector matrix.
@@ -172,8 +177,6 @@
             !    virial: The virial tensor, not divided by the volume.
 
             DOUBLE PRECISION, INTENT(IN) :: rc
-            DOUBLE PRECISION, INTENT(IN) :: sigma
-            DOUBLE PRECISION, INTENT(IN) :: eps
             INTEGER, INTENT(IN) :: natoms
             DOUBLE PRECISION, DIMENSION(natoms,3), INTENT(IN) :: atoms
             DOUBLE PRECISION, DIMENSION(3,3), INTENT(IN) :: cell_h
@@ -199,7 +202,7 @@
                DO j = start, index_list(i)
                   CALL vector_separation(cell_h, cell_ih, atoms(i,:), atoms(n_list(j),:), rij, r2)
                   IF (r2 < rc*rc) THEN ! Only calculates contributions between neighbouring particles.
-                     CALL LJ_fij(sigma, eps, rij, sqrt(r2), pot_ij, fij)
+                     CALL aziz_fij(rij, sqrt(r2), pot_ij, fij)
 
                      forces(i,:) = forces(i,:) + fij
                      forces(n_list(j),:) = forces(n_list(j),:) - fij
@@ -217,7 +220,7 @@
 
             ! Assuming an upper-triangular vector matrix for the simulation box.
             volume = cell_h(1,1)*cell_h(2,2)*cell_h(3,3)
-            CALL LJ_longrange(rc, sigma, eps, natoms, volume, pot_lr, vir_lr)
+            CALL aziz_longrange(rc, sigma, eps, natoms, volume, pot_lr, vir_lr)
             pot = pot + pot_lr
             DO k = 1, 3
                virial(k,k) = virial(k,k) + vir_lr
