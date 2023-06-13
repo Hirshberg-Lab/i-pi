@@ -41,14 +41,14 @@
          USE DISTANCE
       IMPLICIT NONE
 
-      DOUBLE PRECISION, PARAMETER :: alpha = 13.353384
-      DOUBLE PRECISION, PARAMETER :: A = 544850.4
-      DOUBLE PRECISION, PARAMETER :: eps = 0.0000342 ! In Hartrees
-      DOUBLE PRECISION, PARAMETER :: C6 = 1.3732412
-      DOUBLE PRECISION, PARAMETER :: C8 = 0.4253785
-      DOUBLE PRECISION, PARAMETER :: C10 = 0.178100
-      DOUBLE PRECISION, PARAMETER :: D = 1.241314
-      DOUBLE PRECISION, PARAMETER :: rm = 5.607 ! In Bohr radii
+      DOUBLE PRECISION, PARAMETER :: a_alpha = 13.353384
+      DOUBLE PRECISION, PARAMETER :: a_A = 544850.4
+      DOUBLE PRECISION, PARAMETER :: a_eps = 0.0000342 ! In Hartrees
+      DOUBLE PRECISION, PARAMETER :: a_C6 = 1.3732412
+      DOUBLE PRECISION, PARAMETER :: a_C8 = 0.4253785
+      DOUBLE PRECISION, PARAMETER :: a_C10 = 0.178100
+      DOUBLE PRECISION, PARAMETER :: a_D = 1.241314
+      DOUBLE PRECISION, PARAMETER :: a_rm = 5.607 ! In Bohr radii
 
       CONTAINS
 
@@ -72,24 +72,24 @@
             f = 1.0D0
             df = 0.0D0
             
-            IF (r / rm <= D) THEN
-                f = EXP(-(D * rm / r - 1.0D0)**2)
-                df = (2.0D0 * D * rm * (D * rm - r)) * EXP(-(D * rm / r - 1.0D0) ** 2) / r ** 3
+            IF (r / a_rm <= a_D) THEN
+                f = EXP(-(a_D * a_rm / r - 1.0D0)**2)
+                df = (2.0D0 * a_D * a_rm * (a_D * a_rm - r)) * EXP(-(a_D * a_rm / r - 1.0D0) ** 2) / r ** 3
             END IF
             
-            ratio = rm / r
+            ratio = a_rm / r
 
-            exp_term = EXP(-alpha / ratio)
-            sum_term = (C6 * (ratio ** 6) + C8 * (ratio ** 8) + C10 * (ratio ** 10)) * f
+            exp_term = EXP(-a_alpha / ratio)
+            sum_term = (a_C6 * (ratio ** 6) + a_C8 * (ratio ** 8) + a_C10 * (ratio ** 10)) * f
 
-            pot = eps * (A * exp_term - sum_term)
+            pot = a_eps * (a_A * exp_term - sum_term)
             
             ! Force evaluation
-            f_exp_term = alpha * A * EXP(-alpha / ratio) / rm
-            f_sum1 = (C6 * (ratio ** 6) + C8 * (ratio ** 8) + C10 * (ratio ** 10)) * df
-            f_sum2 = (6.0D0 * C6 * (ratio ** 7) + 8.0D0 * C8 * (ratio ** 9) + 10.0D0 * C10 * (ratio ** 11)) * (f / rm)
+            f_exp_term = a_alpha * a_A * EXP(-a_alpha / ratio) / a_rm
+            f_sum1 = (a_C6 * (ratio ** 6) + a_C8 * (ratio ** 8) + a_C10 * (ratio ** 10)) * df
+            f_sum2 = (6.0D0 * a_C6 * (ratio ** 7) + 8.0D0 * a_C8 * (ratio ** 9) + 10.0D0 * a_C10 * (ratio ** 11)) * (f / a_rm)
             
-            force = eps * (f_exp_term + f_sum1 - f_sum2)
+            force = a_eps * (f_exp_term + f_sum1 - f_sum2)
 
          END SUBROUTINE
 
@@ -145,14 +145,14 @@
             ! Also check where the cutoff enters the picture
             maxsep = volume**(1d0/3d0)
 
-            rmol = rm / maxsep
-            rm3 = rm * rm * rmol
-            t1 = A * EXP(-alpha * maxsep / (2.0D0 * rm)) * rm * (8.0D0 * rm * rm + 4.0D0 * maxsep * rm * alpha + maxsep * maxsep * alpha * alpha) / (4.0D0 * alpha * alpha * alpha)
-            t2 = 8.0D0 * C6 * rmoL**3.0D0 / 3.0D0
-            t3 = 32.0D0 * C8 * rmoL**5.0D0 / 5.0D0
-            t4 = 128.0D0 * C10 * rmoL**7.0D0 / 7.0D0
+            rmol = a_rm / maxsep
+            rm3 = a_rm * a_rm * rmol
+            t1 = a_A * EXP(-a_alpha * maxsep / (2.0D0 * a_rm)) * a_rm * (8.0D0 * a_rm * a_rm + 4.0D0 * maxsep * a_rm * a_alpha + maxsep * maxsep * a_alpha * a_alpha) / (4.0D0 * a_alpha * a_alpha * a_alpha)
+            t2 = 8.0D0 * a_C6 * rmoL**3.0D0 / 3.0D0
+            t3 = 32.0D0 * a_C8 * rmoL**5.0D0 / 5.0D0
+            t4 = 128.0D0 * a_C10 * rmoL**7.0D0 / 7.0D0
 
-            pot_lr = 2.0D0 * ACOS(-1.0D0) * eps * (t1 - rm3 * (t2 + t3 + t4))
+            pot_lr = 2.0D0 * ACOS(-1.0D0) * a_eps * (t1 - rm3 * (t2 + t3 + t4))
             
             vir_lr = 0.0D0
 
@@ -220,7 +220,7 @@
 
             ! Assuming an upper-triangular vector matrix for the simulation box.
             volume = cell_h(1,1)*cell_h(2,2)*cell_h(3,3)
-            CALL aziz_longrange(rc, sigma, eps, natoms, volume, pot_lr, vir_lr)
+            CALL aziz_longrange(rc, natoms, volume, pot_lr, vir_lr)
             pot = pot + pot_lr
             DO k = 1, 3
                virial(k,k) = virial(k,k) + vir_lr
