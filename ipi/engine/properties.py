@@ -568,9 +568,7 @@ class Properties(dobject):
                 "help": "The coordinates (x,y,z) of the global centroid of the physical system.",
                 "longhelp": "The coordinates (x,y,z) of the global centroid of the physical system.",
                 "size": 3,
-                "func": (
-                    lambda _: np.mean(dstrip(self.beads.qc).reshape(-1, 3), axis=0)
-                ),
+                "func": self.get_glob_centroid,
             },
             "atom_f": {
                 "dimension": "force",
@@ -1670,6 +1668,9 @@ class Properties(dobject):
             )
 
         return rg_tot / float(ncount)
+
+    def get_glob_centroid(self):
+        return np.mean(dstrip(self.beads.qc).reshape(-1, 3), axis=0)
 
     def kstress_sctd(self):
         """Calculates the quantum centroid virial kinetic stress tensor
