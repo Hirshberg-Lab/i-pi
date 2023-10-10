@@ -25,7 +25,7 @@ def kth_diag_indices(a, k):
 
 
 class ExchangePotential(dobject):
-    def __init__(self, nbosons, q, nbeads, bead_mass, spring_freq_squared, betaP):
+    def __init__(self, nbosons, q, nbeads, bead_mass, spring_freq_squared, betaP, cell):
         assert nbosons > 0
         self._N = nbosons
         self._P = nbeads
@@ -33,11 +33,12 @@ class ExchangePotential(dobject):
         self._spring_freq_squared = spring_freq_squared
         self._particle_mass = bead_mass
         self._q = q
+        self._cell = cell
 
         # self._bead_diff_intra[j] = [r^{j+1}_0 - r^{j}_0, ..., r^{j+1}_{N-1} - r^{j}_{N-1}]
-        self._bead_diff_intra = np.diff(self._q, axis=0)
+        self._bead_diff_intra = np.apply_along_axis(lambda d: self._cell.minimum_distance_of_diff(d), axis=-1, arr=np.diff(self._q, axis=0))
         # self._bead_dist_inter_first_last_bead[l][m] = r^0_{l} - r^{P-1}_{m}
-        self._bead_diff_inter_first_last_bead = (
+        self._bead_diff_inter_first_last_bead = np.apply_along_axis(lambda d: self._cell.minimum_distance_of_diff(d), axis=-1, arr=
             self._q[0, :, np.newaxis, :] - self._q[self._P - 1, np.newaxis, :, :]
         )
 
