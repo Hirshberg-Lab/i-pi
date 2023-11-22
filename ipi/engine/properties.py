@@ -8,12 +8,14 @@ prepares them for output.
 
 
 import numpy as np
+import sys
 
 from ipi.utils.messages import verbosity, info, warning
 from ipi.utils.depend import *
 from ipi.utils.units import Constants, unit_to_internal
 from ipi.utils.mathtools import logsumlog, h2abc_deg
 from ipi.utils.io.inputs import io_xml
+from ipi.utils.exchange import ExchangePotential
 from ipi.engine.atoms import *
 from ipi.engine.cell import *
 from ipi.engine.ensembles import *
@@ -427,6 +429,18 @@ class Properties(dobject):
                       to specify which species to find the kinetic energy of. If not specified, all atoms are used.""",
                 "func": self.get_kincv,
             },
+            "kinetic_gcv": {
+                "dimension": "energy",
+                "help": "The global centroid-virial quantum kinetic energy of the physical system.",
+                "longhelp": """The global centroid-virial quantum kinetic energy of the physical system.""",
+                "func": self.get_kingcv,
+            },
+            "prim_identical": {
+                "dimension": "energy",
+                "help": "The primitive quantum kinetic energy of indistinguishable particles.",
+                "longhelp": """The primitive quantum kinetic energy for a system of indistinguishable particles.""",
+                "func": self.get_prim_identical,
+            },
             "kinetic_td": {
                 "dimension": "energy",
                 "help": "The primitive quantum kinetic energy of the physical system.",
@@ -556,6 +570,20 @@ class Properties(dobject):
                         self.beads.p, atom=atom, bead=bead
                     )
                 ),
+            },
+            "global_centroid": {
+                "dimension": "length",
+                "help": "The coordinates (x,y,z) of the global centroid of the physical system.",
+                "longhelp": "The coordinates (x,y,z) of the global centroid of the physical system.",
+                "size": 3,
+                "func": self.get_glob_centroid,
+            },
+            "tot_nonspring_force": {
+                "dimension": "force",
+                "help": "The force components (x,y,z) of the total (non-spring) force acting on the system.",
+                "longhelp": "The force components (x,y,z) of the total (non-spring) force acting on the system.",
+                "size": 3,
+                "func": self.get_forces_sum,
             },
             "atom_f": {
                 "dimension": "force",
@@ -1133,6 +1161,52 @@ class Properties(dobject):
 
         return acv
 
+    def get_forces_sum(self):
+        """Returns the vector sum of all the forces (EXCLUDING THE SPRINGS).
+        """
+
+        f = dstrip(self.forces.f)
+
+        tot_force = [0, 0, 0]
+
+        for bead_idx in range(self.beads.nbeads):
+            for atom_idx in range(self.beads.natoms):
+                tot_force[0] += f[bead_idx, atom_idx]
+                tot_force[1] += f[bead_idx, atom_idx + 1]
+                tot_force[2] += f[bead_idx, atom_idx + 2]
+
+        return tot_force
+
+    def get_kingcv(self):
+        """Calculates the global quantum centroid virial kinetic energy estimator."""
+
+        f = dstrip(self.forces.f)
+
+        # q has the form [nbeads, 3 * natoms]
+        q = dstrip(self.beads.q).copy()
+
+        # self.beads.qc has dimensions of 3*N
+        qc = dstrip(self.beads.qc)
+
+        # Calculate global centroid from the N centroids
+        # TODO: Consider replacing mean with something less error-prone (i.e., explicit division by natoms)
+        # TODO: np.tile is used only to subtract the same vector from all the atomic q[bead_idx] coordinates.
+        #       think of a better implementation.
+        qglob = np.tile(np.mean(qc.reshape(-1, 3), axis=0), self.beads.natoms)
+
+        for b in range(self.beads.nbeads):
+            q[b] -= qglob
+
+        acv = np.dot(q.flatten(), f.flatten())
+
+        # Minus because -F=dV/dr
+        acv *= -0.5 / self.beads.nbeads
+
+        # The constant is d/(2*beta) where d is the dimension (here d=3)
+        acv += 1.5 * Constants.kb * self.ensemble.temp
+
+        return acv
+
     def get_scpottd(self):
         """Calculates the Suzuki-Chin thermodynamic potential energy estimator."""
         v = 0.0
@@ -1341,6 +1415,60 @@ class Properties(dobject):
             )
 
         return atd
+
+    def get_prim_identical(self):
+        """Implementation of the Hirshberg-Rizzi-Parrinello primitive
+        kinetic energy estimator for identical particles.
+        Corresponds to Eqns. (4)-(5) in SI of pnas.1913365116.
+        """
+        nbosons = len(self.nm.bosons)
+
+        assert nbosons > 0
+
+        q = self.beads.q.reshape((self.beads.nbeads, self.beads.natoms, 3))[:, self.nm.bosons, :]
+        m = dstrip(self.beads.m)[self.nm.bosons]
+        boson_mass = m[0]
+
+        spring_freq_squared = self.nm.omegan2 / self.beads.nbeads
+        betaP = 1.0 / (Constants.kb * self.ensemble.temp)  # TODO: this is NOT betaP, this is beta
+
+        exchange_data = ExchangePotential(nbosons, q, self.beads.nbeads, boson_mass, spring_freq_squared, betaP)
+
+        # Retrieve Enk and VBn arrays
+        E_kn = exchange_data._E_from_to  # E(k, N) = E_kn[N-k, N-1]
+        V = exchange_data._V
+
+        # Kinetic estimator calculation
+        est = np.zeros(nbosons + 1)
+
+        for m in range(1, nbosons + 1):
+            sig = 0.0
+
+            # Numerical stability
+
+            # Xiong-Xiong method (arXiv.2206.08341)
+            e_tilde = sys.float_info.max
+            for k in range(m, 0, -1):
+                e_tilde = min(e_tilde, E_kn[m - k, m - 1] + V[m - k])
+
+            # Hirshberg-Rizzi-Parrinello method (pnas.1913365116)
+            # e_tilde = min(E_kn[m_count - 1] + V[m - 1], E_kn[m_count - m] + V[0])
+
+            # Estimator evaluation.
+
+            for k in range(m, 0, -1):
+                E_kn_val = E_kn[m - k, m - 1]
+
+                sig += (est[m - k] - E_kn_val) * np.exp(-betaP * (E_kn_val + V[m - k] - e_tilde))
+
+            sig_denom_m = m * np.exp(-betaP * (V[m] - e_tilde))
+
+            est[m] = sig / sig_denom_m
+
+        # In general, the dimensionless factor is 0.5*d*N*P/beta
+        factor = 1.5 * self.beads.nbeads * nbosons * Constants.kb * self.ensemble.temp
+
+        return factor + est[nbosons]
 
     def get_sckinpr(self):
         """Calculates the quantum centroid virial kinetic energy estimator."""
@@ -1646,6 +1774,9 @@ class Properties(dobject):
             )
 
         return rg_tot / float(ncount)
+
+    def get_glob_centroid(self):
+        return np.mean(dstrip(self.beads.qc).reshape(-1, 3), axis=0)
 
     def kstress_sctd(self):
         """Calculates the quantum centroid virial kinetic stress tensor
