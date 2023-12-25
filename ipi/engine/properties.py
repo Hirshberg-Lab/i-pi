@@ -891,7 +891,12 @@ class Properties:
                 "longhelp": """Average sign of exchange configuration, for reweighting fermionic observables.
                                Decreases exponentially with beta and the number of particles, but if not too large,
                                can be used to recover fermionic statistics from bosonic simulations""",
-            }
+            },
+            "boson_profiling": {
+                "dimension": "seconds",
+                "help": "The total clock time elapsed while computing boson potential and forces.",
+                "func": (lambda: getattr(self.nm, "boson_time", 0)),
+            },
         }
 
     def bind(self, system):

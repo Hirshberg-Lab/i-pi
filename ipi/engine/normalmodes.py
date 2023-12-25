@@ -817,6 +817,12 @@ class NormalModes:
         not altered here.
         """
 
+        if not hasattr(self, "boson_time"):
+            self.boson_time = 0.0
+
+        import time
+        start_time = time.time()
+
         if self.nbeads == 1:
             pass
 
@@ -876,6 +882,9 @@ class NormalModes:
             #   pq = np.dot(prop_pq[k],pq)
             #   self.qnm[k] = pq[1,:]/sm
             #   self.pnm[k] = pq[0,:]*sm
+
+        end_time = time.time()
+        self.boson_time += end_time - start_time
 
     def get_kins(self):
         """Gets the MD kinetic energy for all the normal modes.
