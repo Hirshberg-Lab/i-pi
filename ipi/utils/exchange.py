@@ -37,7 +37,8 @@ class ExchangePotential(dobject):
         self._cell = cell
 
         # self._bead_diff_intra[j] = [r^{j+1}_0 - r^{j}_0, ..., r^{j+1}_{N-1} - r^{j}_{N-1}]
-        self._bead_diff_intra = np.apply_along_axis(lambda d: self._cell.minimum_distance_of_diff(d), axis=-1, arr=np.diff(self._q, axis=0))
+        # self._bead_diff_intra = np.apply_along_axis(lambda d: self._cell.minimum_distance_of_diff(d), axis=-1, arr=np.diff(self._q, axis=0))
+        self._bead_diff_intra = np.diff(self._q, axis=0)
         # self._bead_dist_inter_first_last_bead[l][m] = r^0_{l} - r^{P-1}_{m}
         self._bead_diff_inter_first_last_bead = np.apply_along_axis(lambda d: self._cell.minimum_distance_of_diff(d), axis=-1, arr=
             self._q[0, :, np.newaxis, :] - self._q[self._P - 1, np.newaxis, :, :]
