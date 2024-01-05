@@ -5,9 +5,10 @@ Used in /engine/normalmodes.py
 # This file is part of i-PI.
 # i-PI Copyright (C) 2014-2015 i-PI developers
 # See the "licenses" directory for full license information.
-from ipi.utils.depend import *
 
+import math
 import numpy as np
+import sys
 
 
 def kth_diag_indices(a, k):
@@ -211,12 +212,12 @@ class ExchangePotential(dobject):
             * np.exp(
                 -self._betaP
                 * (
-                    # np.asarray([self.V_forward(u - 1) for u in range(self._N)])[np.newaxis, :]
+                    # np.asarray([self._V(u - 1) for u in range(self._N)])[np.newaxis, :]
                     self._V[np.newaxis, :-1]
                     # + np.asarray([(self._E_from_to[u, l] if l >= u else 0) for l in range(self._N)
                     #                   for u in range(self._N)]).reshape((self._N, self._N))
                     + self._E_from_to.T
-                    # + np.asarray([self.V_backward(l + 1) for l in range(self._N)])[:, np.newaxis]
+                    # + np.asarray([self._V_backward(l + 1) for l in range(self._N)])[:, np.newaxis]
                     + self._V_backward[1:, np.newaxis]
                     - self.V_all()
                 )
@@ -288,9 +289,10 @@ class ExchangePotential(dobject):
         """
         Evaluate the probability of the configuration where all the particles are separate.
         """
-        return ((1.0 / np.math.factorial(self._N)) *
-                np.exp(-self._betaP *
-                       (np.trace(self._E_from_to) - self.V_all())))
+        return np.exp(
+            -self._betaP * (np.trace(self._E_from_to) - self.V_all())
+            - math.log(np.math.factorial(self._N))  # (1.0 / np.math.factorial(self._N))
+        )
 
     def get_longest_probability(self):
         """
@@ -298,4 +300,59 @@ class ExchangePotential(dobject):
         divided by 1/N. Notice that there are (N-1)! permutations of this topology
         (all represented by the cycle 0,1,...,N-1,0); this cancels the division by 1/N.
         """
-        return np.exp(-self._betaP * (self._E_from_to[0,-1] - self.V_all()))
+        return np.exp(-self._betaP * (self._E_from_to[0, -1] - self.V_all()))
+
+    def get_kinetic_td(self):
+        """Implementation of the Hirshberg-Rizzi-Parrinello primitive
+        kinetic energy estimator for identical particles.
+        Corresponds to Eqns. (4)-(5) in SI of pnas.1913365116.
+        """
+        est = np.zeros(self._N + 1)
+
+        for m in range(1, self._N + 1):
+            sig = 0.0
+
+            # Numerical stability - Xiong-Xiong method (arXiv.2206.08341)
+            e_tilde = sys.float_info.max
+            for k in range(m, 0, -1):
+                e_tilde = min(e_tilde, self._E_from_to[m - k, m - 1] + self._V[m - k])
+
+            for k in range(m, 0, -1):
+                E_kn_val = self._E_from_to[m - k, m - 1]
+                sig += (est[m - k] - E_kn_val) * np.exp(
+                    -self._betaP * (E_kn_val + self._V[m - k] - e_tilde)
+                )
+
+            sig_denom_m = m * np.exp(-self._betaP * (self._V[m] - e_tilde))
+
+            est[m] = sig / sig_denom_m
+
+        factor = 1.5 * self._N / self._betaP
+
+        return factor + est[self._N] / self._P
+
+    def get_fermionic_avg_sign(self):
+        """
+        The average permutation sign as defined in Eq. (9) https://doi.org/10.1063/5.0008720,
+        which can be used to reweight observables to obtain fermionic statistics.
+        """
+        return self._get_fermionic_potential_exp() / np.exp(-self._betaP * self._V[-1])
+
+    def _get_fermionic_potential_exp(self):
+        """
+        Exponential of the fermionic pseudo-potential defined by
+        the recurrence relation in Eq. (5) of https://doi.org/10.1063/5.0008720.
+        Numerically unstable since it does not use log-sum-exp trick, seeing that the
+        sum of exponentials could be negative.
+        """
+        xi = -1
+        W = np.empty(self._N + 1, float)
+        W[0] = 1.0
+
+        for m in range(1, self._N + 1):
+            perm_sign = np.array([xi ** (k - 1) for k in range(m, 0, -1)])
+            W[m] = (1.0 / m) * np.sum(
+                perm_sign * W[:m] * np.exp(-self._betaP * self._E_from_to[:m, m - 1])
+            )
+
+        return W[-1]

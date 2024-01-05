@@ -11,7 +11,7 @@ import numpy as np
 import sys
 
 from ipi.utils.messages import verbosity, info, warning
-from ipi.utils.depend import *
+from ipi.utils.depend import dstrip
 from ipi.utils.units import Constants, unit_to_internal
 from ipi.utils.mathtools import logsumlog, h2abc_deg
 from ipi.utils.io.inputs import io_xml
@@ -202,7 +202,7 @@ def help_rst(idict, standalone=True):
     return rstr
 
 
-class Properties(dobject):
+class Properties:
 
     """A proxy to compute and output properties of the system.
 
@@ -909,13 +909,22 @@ class Properties(dobject):
                 "dimension": "undefined",
                 "size": 1,
                 "func": self.get_exchange_longest_prob,
-                "help": "Scaled probability of the bosonic exchange configuration where all atoms are connected",
+                "help": "Scaled probability of the bosonic exchange configuration where all atoms are connected.",
                 "longhelp": """Scaled probability of the bosonic exchange configuration where all atoms are connected:
                                the probability of the configuration connecting the ring polymers of all the atoms into
                                one large ring polymer, divided by 1/N, where N is the number of atoms. 
                                A number between 0 and 1, tends to 1 in low temperatures, which indicates that 
                                bosonic exchange is very strong""",
-            }
+            },
+            "fermionic_avg_sign": {
+                "dimension": "undefined",
+                "size": 1,
+                "func": self.get_fermionic_avg_sign,
+                "help": "Average sign of exchange configuration, for reweighting fermionic observables.",
+                "longhelp": """Average sign of exchange configuration, for reweighting fermionic observables.
+                               Decreases exponentially with beta and the number of particles, but if not too large,
+                               can be used to recover fermionic statistics from bosonic simulations""",
+            },
         }
 
     def bind(self, system):
@@ -1154,6 +1163,7 @@ class Properties(dobject):
         # ~ ncount += 1
 
         if ncount == 0:
+            # TODO: don't warn if bosons are matched
             warning(
                 "Couldn't find an atom which matched the argument of kinetic energy, setting to zero.",
                 verbosity.medium,
@@ -1365,7 +1375,7 @@ class Properties(dobject):
         return acv
 
     def get_kintd(self, atom=""):
-        """Calculates the quantum centroid virial kinetic energy estimator.
+        """Calculates the quantum primitive kinetic energy estimator.
 
         Args:
            atom: If given, specifies the atom to give the kinetic energy
@@ -1386,6 +1396,53 @@ class Properties(dobject):
             iatom = -1
             latom = atom
 
+        # Should not ask for a property of a subset of atoms of which some are indistinguishables
+        # without including *all* the indistinguishable atoms.
+        atoms_included = set(range(self.beads.natoms))
+        if iatom != -1:
+            atoms_included = set([iatom])
+        elif latom != "":
+            atoms_included = set(
+                filter(lambda i: latom == self.beads.names[i], range(self.beads.natoms))
+            )
+
+        bosons = set(self.nm.bosons)
+        bosons_included = bosons & atoms_included
+
+        if bosons_included and not (bosons <= atoms_included):
+            raise IndexError(
+                "Cannot output property of a proper subset of the bosons: "
+                "bosons %s are included, but %s are missing"
+                % (bosons_included, bosons - bosons_included)
+            )
+
+        res, ncount = self._kinetic_td_distinguishables(
+            atom, iatom, latom, skip_atom_indices=set(self.nm.bosons)
+        )
+        if bosons_included:
+            res += self.nm.exchange.get_kinetic_td()
+            ncount += len(bosons_included)
+
+        if ncount == 0:
+            warning(
+                "Couldn't find an atom which matched the argument of kinetic energy, setting to zero.",
+                verbosity.medium,
+            )
+
+        return res
+
+    def _kinetic_td_distinguishables(self, atom, iatom, latom, skip_atom_indices=None):
+        """
+        The total kinetic energy via the primitive estimator for distinguishable particles.
+
+        Args:
+           atom: If given, specifies the atom to give the kinetic energy
+              for. If not, the system kinetic energy is given.
+           iatom: Index of the atom specified (or -1)
+           latom: Label of the atom specified (or "")
+           skip_atom_indices:
+                atoms not to be considered in the distinguishable estimator (e.g. bosons)
+        """
         q = dstrip(self.beads.q)
         m = dstrip(self.beads.m)
         PkT32 = 1.5 * Constants.kb * self.ensemble.temp * self.beads.nbeads
@@ -1394,6 +1451,9 @@ class Properties(dobject):
         ncount = 0
         for i in range(self.beads.natoms):
             if atom != "" and iatom != i and latom != self.beads.names[i]:
+                continue
+
+            if i in skip_atom_indices:
                 continue
 
             ktd = 0.0
@@ -1408,13 +1468,7 @@ class Properties(dobject):
             atd += ktd
             ncount += 1
 
-        if ncount == 0:
-            warning(
-                "Couldn't find an atom which matched the argument of kinetic energy, setting to zero.",
-                verbosity.medium,
-            )
-
-        return atd
+        return atd, ncount
 
     def get_prim_identical(self):
         """Implementation of the Hirshberg-Rizzi-Parrinello primitive
@@ -2780,8 +2834,13 @@ class Properties(dobject):
             return 0.0
         return self.nm.exchange.get_longest_probability()
 
+    def get_fermionic_avg_sign(self):
+        if not self.nm.exchange:
+            return 0.0
+        return self.nm.exchange.get_fermionic_avg_sign()
 
-class Trajectories(dobject):
+
+class Trajectories:
 
     """A simple class to take care of output of trajectory data.
 
