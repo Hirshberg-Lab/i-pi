@@ -129,32 +129,10 @@ class Cell:
             s[i] -= round(s[i])
         return np.dot(self.h, s)
 
-
-    def minimum_distance(self, atom1, atom2):
-        """Takes two atoms and tries to find the smallest vector between two
-        images.
-
-        This is only rigorously accurate in the case of a cubic cell,
-        but gives the correct results as long as the cut-off radius is defined
-        as smaller than the smallest width between parallel faces even for
-        triclinic cells.
-
-        Args:
-           atom1: An Atom object.
-           atom2: An Atom object.
-
-        Returns:
-           An array giving the minimum distance between the positions of atoms
-           atom1 and atom2 in the minimum image convention.
-        """
-
-        s = np.dot(self.ih, atom1.q - atom2.q)
-        for i in range(3):
-            s[i] -= round(s[i])
-        return np.dot(self.h, s)
-
     def minimum_distance_of_diff(self, d):
         s = np.dot(self.ih, d)
         for i in range(3):
             s[i] -= round(s[i])
         return np.dot(self.h, s)
+
+dproperties(Cell, ["h", "ih", "V"])
