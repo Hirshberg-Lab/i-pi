@@ -5,12 +5,11 @@ Used in /engine/normalmodes.py
 # This file is part of i-PI.
 # i-PI Copyright (C) 2014-2015 i-PI developers
 # See the "licenses" directory for full license information.
-from ipi.utils.depend import *
-from ipi.utils.units import Constants
 
 import math
 import numpy as np
 import sys
+
 
 def kth_diag_indices(a, k):
     """
@@ -27,13 +26,21 @@ def kth_diag_indices(a, k):
 
 
 class ExchangePotential:
-    def __init__(self, nbosons, q, nbeads, bead_mass, spring_freq_squared, betaP):
+    def __init__(self, nbosons, nbeads, bead_mass, spring_freq_squared, betaP):
         assert nbosons > 0
         self._N = nbosons
         self._P = nbeads
         self._betaP = betaP
         self._spring_freq_squared = spring_freq_squared
         self._particle_mass = bead_mass
+
+        self._bead_diff_intra = None
+        self._bead_diff_inter_first_last_bead = None
+        self._E_from_to = None
+        self._V = None
+        self._V_backward = None
+
+    def set_coordinates(self, q):
         self._q = q
 
         # self._bead_diff_intra[j] = [r^{j+1}_0 - r^{j}_0, ..., r^{j+1}_{N-1} - r^{j}_{N-1}]
@@ -44,7 +51,7 @@ class ExchangePotential:
         )
 
         # cycle energies:
-        # self._E_from_to[u, u] is the ring polymer energy of the cycle on particle indices u,...,v
+        # self._E_from_to[u, v] is the ring polymer energy of the cycle on particle indices u,...,v
         self._E_from_to = self._evaluate_cycle_energies()
 
         # prefix potentials:
@@ -300,7 +307,7 @@ class ExchangePotential:
         divided by 1/N. Notice that there are (N-1)! permutations of this topology
         (all represented by the cycle 0,1,...,N-1,0); this cancels the division by 1/N.
         """
-        return np.exp(-self._betaP * (self._E_from_to[0,-1] - self.V_all()))
+        return np.exp(-self._betaP * (self._E_from_to[0, -1] - self.V_all()))
 
     def get_kinetic_td(self):
         """Implementation of the Hirshberg-Rizzi-Parrinello primitive
@@ -312,28 +319,26 @@ class ExchangePotential:
         for m in range(1, self._N + 1):
             sig = 0.0
 
-            # Numerical stability
-            # Xiong-Xiong method (arXiv.2206.08341)
+            # Numerical stability - Xiong-Xiong method (arXiv.2206.08341)
             e_tilde = sys.float_info.max
             for k in range(m, 0, -1):
                 e_tilde = min(e_tilde, self._E_from_to[m - k, m - 1] + self._V[m - k])
 
-            # Estimator evaluation.
             for k in range(m, 0, -1):
                 E_kn_val = self._E_from_to[m - k, m - 1]
-                sig += (est[m - k] - E_kn_val) * np.exp(-self._betaP * (E_kn_val + self._V[m - k] - e_tilde))
+                sig += (est[m - k] - E_kn_val) * np.exp(
+                    -self._betaP * (E_kn_val + self._V[m - k] - e_tilde)
+                )
 
             sig_denom_m = m * np.exp(-self._betaP * (self._V[m] - e_tilde))
 
             est[m] = sig / sig_denom_m
 
-        # In general, the dimensionless factor is 0.5*d*N*P/beta
-        # factor = 1.5 * self._P * self._N * Constants.kb * self.ensemble.temp
         factor = 1.5 * self._N / self._betaP
 
         return factor + est[self._N] / self._P
 
-    def get_fermionic_avg_sign(self):
+    def get_fermionic_sign(self):
         """
         The average permutation sign as defined in Eq. (9) https://doi.org/10.1063/5.0008720,
         which can be used to reweight observables to obtain fermionic statistics.
@@ -352,9 +357,9 @@ class ExchangePotential:
         W[0] = 1.0
 
         for m in range(1, self._N + 1):
-            perm_sign = np.array([xi ** (k-1) for k in range(m, 0, -1)])
-            W[m] = (1.0/m) * np.sum(perm_sign *
-                                    W[:m] *
-                                    np.exp(-self._betaP * self._E_from_to[:m, m - 1]))
+            perm_sign = np.array([xi ** (k - 1) for k in range(m, 0, -1)])
+            W[m] = (1.0 / m) * np.sum(
+                perm_sign * W[:m] * np.exp(-self._betaP * self._E_from_to[:m, m - 1])
+            )
 
         return W[-1]
