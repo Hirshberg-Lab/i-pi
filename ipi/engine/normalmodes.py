@@ -840,6 +840,9 @@ class NormalModes:
             self.pnm = pnm * sm
             self.qnm = qnm / sm
 
+        end_time = time.time()
+        self.boson_time += end_time - start_time
+
     def get_kins(self):
         """Gets the MD kinetic energy for all the normal modes.
 
