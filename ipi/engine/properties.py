@@ -15,7 +15,7 @@ from ipi.utils.units import Constants, unit_to_internal
 from ipi.utils.mathtools import logsumlog, h2abc_deg
 from ipi.utils.io.inputs import io_xml
 
-__all__ = ["Properties", "Trajectories", "getkey", "getall", "help_latex"]
+__all__ = ["Properties", "Trajectories", "getkey", "getall", "help_latex", "help_rst"]
 
 
 def getkey(pstring):
@@ -196,7 +196,6 @@ def help_rst(idict, standalone=True):
 
 
 class Properties:
-
     """A proxy to compute and output properties of the system.
 
     Takes the fundamental properties calculated during the simulation, and
@@ -331,9 +330,11 @@ class Properties:
                 "longhelp": """The physical system potential energy. With the optional argument 'bead'
                          will print the potential associated with the specified bead.""",
                 "func": (
-                    lambda bead="-1": self.forces.pot / self.beads.nbeads
-                    if int(bead) < 0
-                    else self.forces.pots[int(bead)]
+                    lambda bead="-1": (
+                        self.forces.pot / self.beads.nbeads
+                        if int(bead) < 0
+                        else self.forces.pots[int(bead)]
+                    )
                 ),
             },
             "bead_potentials": {
@@ -362,12 +363,11 @@ class Properties:
                        potential must be returned. The optional argument 'bead' will print the potential associated
                        with the specified bead. If the potential is weighed, the weight will be applied. """,
                 "func": (
-                    lambda index, bead="-1": self.forces.pots_component(
-                        int(index)
-                    ).sum()
-                    / self.beads.nbeads
-                    if int(bead) < 0
-                    else self.forces.pots_component(int(index))[int(bead)]
+                    lambda index, bead="-1": (
+                        self.forces.pots_component(int(index)).sum() / self.beads.nbeads
+                        if int(bead) < 0
+                        else self.forces.pots_component(int(index))[int(bead)]
+                    )
                 ),
             },
             "pot_component_raw": {
@@ -379,12 +379,12 @@ class Properties:
                        will print the potential associated with the specified bead. Potential weights
                        will not be applied. """,
                 "func": (
-                    lambda index, bead="-1": self.forces.pots_component(
-                        int(index), False
-                    ).sum()
-                    / self.beads.nbeads
-                    if int(bead) < 0
-                    else self.forces.pots_component(int(index), False)[int(bead)]
+                    lambda index, bead="-1": (
+                        self.forces.pots_component(int(index), False).sum()
+                        / self.beads.nbeads
+                        if int(bead) < 0
+                        else self.forces.pots_component(int(index), False)[int(bead)]
+                    )
                 ),
             },
             "forcemod": {
@@ -393,9 +393,11 @@ class Properties:
                 "longhelp": """The modulus of the force. With the optional argument 'bead'
                        will print the force associated with the specified bead.""",
                 "func": (
-                    lambda bead="-1": np.linalg.norm(self.forces.f) / self.beads.nbeads
-                    if int(bead) < 0
-                    else np.linalg.norm(self.forces.f[int(bead)])
+                    lambda bead="-1": (
+                        np.linalg.norm(self.forces.f) / self.beads.nbeads
+                        if int(bead) < 0
+                        else np.linalg.norm(self.forces.f[int(bead)])
+                    )
                 ),
             },
             "spring": {
@@ -891,11 +893,6 @@ class Properties:
                                can be used to recover fermionic statistics from bosonic simulations,
                                see doi:10.1063/5.0008720.""",
             },
-            "boson_profiling": {
-                "dimension": "seconds",
-                "help": "The total clock time elapsed while computing boson potential and forces.",
-                "func": (lambda: getattr(self.nm, "boson_time", 0)),
-            }
         }
 
     def bind(self, system):
@@ -1337,7 +1334,7 @@ class Properties:
             atom, iatom, latom, skip_atom_indices=set(self.nm.bosons)
         )
         if bosons_included:
-            res += self.nm.exchange.get_kinetic_td()
+            res += self.nm.exchange_potential.kinetic_td
             ncount += len(bosons_included)
 
         if ncount == 0:
@@ -1413,7 +1410,7 @@ class Properties:
     def get_sckinpr(self):
         """Calculates the quantum centroid virial kinetic energy estimator."""
 
-        spring = self.beads.vpath * self.nm.omegan2 / self.beads.nbeads
+        spring = self.nm.vspring / self.beads.nbeads
         PkT32 = (
             1.5
             * Constants.kb
@@ -2708,23 +2705,22 @@ class Properties:
         return ti
 
     def get_exchange_distinct_prob(self):
-        if self.nm.exchange is None:
+        if self.nm.exchange_potential is None:
             raise Exception("No bosons found for exchange_distinct_prob")
-        return self.nm.exchange.get_distinct_probability()
+        return self.nm.exchange_potential.distinct_probability
 
     def get_exchange_longest_prob(self):
-        if self.nm.exchange is None:
+        if self.nm.exchange_potential is None:
             raise Exception("No bosons found for exchange_all_prob")
-        return self.nm.exchange.get_longest_probability()
+        return self.nm.exchange_potential.longest_probability
 
     def get_fermionic_sign(self):
-        if self.nm.exchange is None:
+        if self.nm.exchange_potential is None:
             raise Exception("No bosons found for fermionic_sign")
-        return self.nm.exchange.get_fermionic_sign()
+        return self.nm.exchange_potential.fermionic_sign
 
 
 class Trajectories:
-
     """A simple class to take care of output of trajectory data.
 
     Attributes:
