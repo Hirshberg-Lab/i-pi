@@ -893,6 +893,11 @@ class Properties:
                                can be used to recover fermionic statistics from bosonic simulations,
                                see doi:10.1063/5.0008720.""",
             },
+            "boson_profiling": {
+                "dimension": "seconds",
+                "help": "The total clock time elapsed while computing boson potential and forces.",
+                "func": (lambda: getattr(self.nm, "boson_time", 0)),
+            },
         }
 
     def bind(self, system):
